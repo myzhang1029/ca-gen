@@ -18,6 +18,7 @@ pub struct CertificateStore<'name, 'cert> {
 pub struct CertificateInfo<'name, 'cert> {
     cert: CertificateDer<'cert>,
     trusted_by: Vec<&'name str>,
+    x509_name: String,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -40,12 +41,6 @@ fn fetch_one(url: &str, agent: &Agent) -> Result<Vec<CertificateDer<'static>>, E
             let pem: (SectionKind, Vec<u8>) = r?;
             let (section_kind, der_bytes) = pem;
             assert_eq!(section_kind, SectionKind::Certificate);
-            let (_, parsed_cert) = x509_parser::parse_x509_certificate(&der_bytes)?;
-            assert!(parsed_cert.is_ca());
-            let issuer = parsed_cert.issuer();
-            let subject = parsed_cert.subject();
-            assert_eq!(issuer, subject, "root CA not self-signed");
-
             let cert = CertificateDer::from(der_bytes.as_ref()).into_owned();
             Ok(cert)
         })
@@ -54,18 +49,30 @@ fn fetch_one(url: &str, agent: &Agent) -> Result<Vec<CertificateDer<'static>>, E
 
 fn rotate<'name, 'cert>(
     mut tas: Vec<CertificateStore<'name, 'cert>>,
-) -> Result<HashMap<String, CertificateInfo<'name, 'cert>>, webpki::Error> {
+) -> Result<HashMap<String, CertificateInfo<'name, 'cert>>, Error> {
     let mut work: HashMap<String, CertificateInfo> = HashMap::new();
     for item in tas.drain(..) {
         let CertificateStore { name, certificates } = item;
         for cert in certificates {
+            let (_, parsed_cert) = x509_parser::parse_x509_certificate(&cert)?;
+            assert!(parsed_cert.is_ca());
+            let issuer = parsed_cert.issuer();
+            let subject = parsed_cert.subject();
+            assert_eq!(issuer, subject, "root CA not self-signed");
             let fpr = digest::digest(&digest::SHA256, &cert);
             let fpr: String = fpr.encode_hex();
+            let x509_name = subject.to_string();
             if let Some(info) = work.get_mut(&fpr) {
+                assert_eq!(info.x509_name, x509_name);
                 info.trusted_by.push(name);
             } else {
                 let trusted_by = vec![name];
-                work.insert(fpr, CertificateInfo { cert, trusted_by });
+                let info = CertificateInfo {
+                    cert,
+                    trusted_by,
+                    x509_name,
+                };
+                work.insert(fpr, info);
             }
         }
     }

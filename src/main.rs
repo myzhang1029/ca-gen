@@ -12,6 +12,6 @@ fn main() {
         .timeout_global(Some(Duration::from_secs(5)))
         .build();
     let agent: Agent = config.into();
-    let items = fetch_all(ROOT_BUNDLES, &agent);
+    let items = fetch_all(ROOT_BUNDLES, &agent).expect("Could not fetch certificates");
     println!("{items:?}");
 }
