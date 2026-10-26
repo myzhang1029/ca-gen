@@ -1,5 +1,7 @@
-use crate::{Error, fetcher, root_bundles::ROOT_BUNDLES};
+use crate::{Error, fetcher};
+use http::Uri;
 use pem::Pem;
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::{fmt::Write, path::Path, time::Duration};
@@ -14,7 +16,7 @@ pub struct Entry {
     pub enabled: bool,
 }
 
-pub fn download(path: &Path) -> Result<(), Error> {
+pub fn download(path: &Path, bundles: &HashMap<&str, &[Uri]>, num_required: usize) -> Result<(), Error> {
     let agent: Agent = Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(5)))
         .build()
@@ -22,19 +24,18 @@ pub fn download(path: &Path) -> Result<(), Error> {
     let cert_dir = path.join("certs");
     fs::create_dir_all(&cert_dir)?;
     let mut index = String::new();
-    let source_count = ROOT_BUNDLES.len();
-    let mut entries = fetcher::fetch_all(ROOT_BUNDLES, &agent)?
+    let mut entries = fetcher::fetch_all(bundles, &agent)?
         .into_iter()
         .collect::<Vec<_>>();
     // Sort by fingerprint
     entries.sort_by(|(l, _), (r, _)| l.cmp(r));
     for (fpr, info) in entries {
-        let marker = if info.trusted_by.len() == source_count {
+        let marker = if info.trusted_by.len() >= num_required {
             ""
         } else {
             "!"
         };
-        writeln!(index, "{marker}{fpr} {}", info.x509_name).expect("cannot write into a `String`");
+        writeln!(index, "{marker}{fpr} {} {:?}", info.x509_name, info.trusted_by).expect("cannot write into a `String`");
         let pem = pem::encode(&Pem::new("CERTIFICATE", info.cert.to_vec()));
         fs::write(cert_dir.join(format!("{fpr}.pem")), pem)?;
     }

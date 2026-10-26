@@ -1,5 +1,5 @@
-use crate::root_bundles::RootBundle;
 use hex::ToHex;
+use http::Uri;
 use ring::digest::{self};
 use rustls_pki_types::{
     CertificateDer,
@@ -31,10 +31,10 @@ pub enum Error {
     X509(#[from] x509_parser::asn1_rs::Err<x509_parser::error::X509Error>),
 }
 
-fn fetch_one(url: &str, agent: &Agent) -> Result<Vec<CertificateDer<'static>>, Error> {
+fn fetch_one(url: &Uri, agent: &Agent) -> Result<Vec<CertificateDer<'static>>, Error> {
     let body_rdr = agent.get(url).call()?.into_body().into_reader();
     let certs = PemObject::pem_reader_iter(body_rdr);
-    certs
+    let result = certs
         .map(|r| {
             let pem: (SectionKind, Vec<u8>) = r?;
             let (section_kind, der_bytes) = pem;
@@ -42,7 +42,9 @@ fn fetch_one(url: &str, agent: &Agent) -> Result<Vec<CertificateDer<'static>>, E
             let cert = CertificateDer::from(der_bytes.as_ref()).into_owned();
             Ok(cert)
         })
-        .collect()
+        .collect::<Result<Vec<_>, rustls_pki_types::pem::Error>>()?;
+    println!("Collected {} certificates from {url}", result.len());
+    Ok(result)
 }
 
 fn rotate<'name, 'cert>(
@@ -79,7 +81,7 @@ fn rotate<'name, 'cert>(
 }
 
 pub fn fetch_all<'name, 'cert>(
-    bundles: &'cert [RootBundle<'cert>],
+    bundles: &HashMap<&'name str, &[Uri]>,
     agent: &Agent,
 ) -> Result<HashMap<String, CertificateInfo<'name, 'cert>>, Error>
 where
@@ -87,8 +89,7 @@ where
 {
     let items: Vec<CertificateStore<'name, 'cert>> = bundles
         .iter()
-        .map(|bundle| {
-            let RootBundle { name, urls } = bundle;
+        .map(|(name, urls)| {
             let certificates = urls
                 .iter()
                 .flat_map(|url| fetch_one(url, agent))
