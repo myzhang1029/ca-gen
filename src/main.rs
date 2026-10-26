@@ -1,5 +1,5 @@
-mod cache;
 mod fetcher;
+mod io;
 mod root_bundles;
 
 use clap::{Parser, Subcommand};
@@ -31,7 +31,7 @@ enum Error {
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Download => cache::download(&cli.path),
-        Command::Generate => cache::generate_bundle(&cli.path),
+        Command::Download => io::download(&cli.path),
+        Command::Generate => io::generate_bundle(&cli.path),
     }
 }

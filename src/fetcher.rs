@@ -1,11 +1,11 @@
 use crate::root_bundles::RootBundle;
-use aws_lc_rs::digest::{self};
 use hex::ToHex;
+use ring::digest::{self};
 use rustls_pki_types::{
     CertificateDer,
     pem::{PemObject, SectionKind},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use ureq::Agent;
 
 #[derive(Clone, Debug)]
@@ -17,7 +17,7 @@ pub struct CertificateStore<'name, 'cert> {
 #[derive(Clone, Debug)]
 pub struct CertificateInfo<'name, 'cert> {
     pub cert: CertificateDer<'cert>,
-    pub trusted_by: Vec<&'name str>,
+    pub trusted_by: HashSet<&'name str>,
     pub x509_name: String,
 }
 
@@ -29,8 +29,6 @@ pub enum Error {
     Pem(#[from] rustls_pki_types::pem::Error),
     #[error(transparent)]
     X509(#[from] x509_parser::asn1_rs::Err<x509_parser::error::X509Error>),
-    #[error(transparent)]
-    Webpki(#[from] webpki::Error),
 }
 
 fn fetch_one(url: &str, agent: &Agent) -> Result<Vec<CertificateDer<'static>>, Error> {
@@ -64,9 +62,10 @@ fn rotate<'name, 'cert>(
             let x509_name = subject.to_string();
             if let Some(info) = work.get_mut(&fpr) {
                 assert_eq!(info.x509_name, x509_name);
-                info.trusted_by.push(name);
+                info.trusted_by.insert(name);
             } else {
-                let trusted_by = vec![name];
+                let mut trusted_by = HashSet::new();
+                trusted_by.insert(name);
                 let info = CertificateInfo {
                     cert,
                     trusted_by,
@@ -80,10 +79,13 @@ fn rotate<'name, 'cert>(
 }
 
 pub fn fetch_all<'name, 'cert>(
-    bundles: &'static [RootBundle],
+    bundles: &'cert [RootBundle<'cert>],
     agent: &Agent,
-) -> Result<HashMap<String, CertificateInfo<'name, 'cert>>, Error> {
-    let items: Vec<CertificateStore<'static, 'static>> = bundles
+) -> Result<HashMap<String, CertificateInfo<'name, 'cert>>, Error>
+where
+    'cert: 'name,
+{
+    let items: Vec<CertificateStore<'name, 'cert>> = bundles
         .iter()
         .map(|bundle| {
             let RootBundle { name, urls } = bundle;
