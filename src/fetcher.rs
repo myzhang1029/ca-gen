@@ -16,9 +16,9 @@ pub struct CertificateStore<'name, 'cert> {
 
 #[derive(Clone, Debug)]
 pub struct CertificateInfo<'name, 'cert> {
-    cert: CertificateDer<'cert>,
-    trusted_by: Vec<&'name str>,
-    x509_name: String,
+    pub cert: CertificateDer<'cert>,
+    pub trusted_by: Vec<&'name str>,
+    pub x509_name: String,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,10 +48,10 @@ fn fetch_one(url: &str, agent: &Agent) -> Result<Vec<CertificateDer<'static>>, E
 }
 
 fn rotate<'name, 'cert>(
-    mut tas: Vec<CertificateStore<'name, 'cert>>,
+    tas: Vec<CertificateStore<'name, 'cert>>,
 ) -> Result<HashMap<String, CertificateInfo<'name, 'cert>>, Error> {
     let mut work: HashMap<String, CertificateInfo> = HashMap::new();
-    for item in tas.drain(..) {
+    for item in tas {
         let CertificateStore { name, certificates } = item;
         for cert in certificates {
             let (_, parsed_cert) = x509_parser::parse_x509_certificate(&cert)?;
@@ -95,5 +95,5 @@ pub fn fetch_all<'name, 'cert>(
             CertificateStore { name, certificates }
         })
         .collect();
-    Ok(rotate(items)?)
+    rotate(items)
 }

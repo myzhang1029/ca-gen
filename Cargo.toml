@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 aws-lc-rs = "1"
+clap = { version = "4", features = ["derive"] }
 hex = "0.4"
+pem = "4"
 rustls = "0.23"
 rustls-pki-types = "1"
 rustls-webpki = "0.103"

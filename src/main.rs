@@ -1,17 +1,37 @@
+mod cache;
 mod fetcher;
 mod root_bundles;
 
-use root_bundles::ROOT_BUNDLES;
-use std::time::Duration;
-use ureq::Agent;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
-use crate::fetcher::fetch_all;
+#[derive(Debug, Parser)]
+#[command(name = "ca-gen")]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+    #[arg(short = 'p', long, default_value = ".")]
+    pub path: PathBuf,
+}
 
-fn main() {
-    let config = Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(5)))
-        .build();
-    let agent: Agent = config.into();
-    let items = fetch_all(ROOT_BUNDLES, &agent).expect("Could not fetch certificates");
-    println!("{items:?}");
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    Download,
+    Generate,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum Error {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Fetch(#[from] fetcher::Error),
+}
+
+fn main() -> Result<(), Error> {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Download => cache::download(&cli.path),
+        Command::Generate => cache::generate_bundle(&cli.path),
+    }
 }
